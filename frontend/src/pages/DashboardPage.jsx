@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCourses, createCourse, deleteCourse, getGlobalStats } from '../lib/api';
+import {
+  getCourses, createCourse, deleteCourse, getGlobalStats,
+  getSettings, updateSettings, testSettings, shutdownBloom,
+} from '../lib/api';
 
 export default function DashboardPage() {
   const [courses, setCourses] = useState([]);
@@ -11,6 +14,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState(null);
+  const [settingsForm, setSettingsForm] = useState({ llm_api_key: '', llm_base_url: '', llm_model: '' });
+  const [settingsStatus, setSettingsStatus] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [testingSettings, setTestingSettings] = useState(false);
+  const [exited, setExited] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,6 +29,81 @@ export default function DashboardPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  const openSettings = async () => {
+    setShowSettings(true);
+    setSettingsStatus('');
+    try {
+      const data = await getSettings();
+      setSettings(data);
+      setSettingsForm({
+        llm_api_key: '',
+        llm_base_url: data.llm_base_url || '',
+        llm_model: data.llm_model || '',
+      });
+    } catch (err) {
+      setSettingsStatus(err.message);
+    }
+  };
+
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsStatus('');
+    try {
+      const payload = {
+        llm_api_key: settingsForm.llm_api_key.trim() || null,
+        llm_base_url: settingsForm.llm_base_url.trim(),
+        llm_model: settingsForm.llm_model.trim(),
+      };
+      const data = await updateSettings(payload);
+      setSettings(data);
+      setSettingsForm((prev) => ({ ...prev, llm_api_key: '' }));
+      setSettingsStatus('已保存并生效');
+    } catch (err) {
+      setSettingsStatus(err.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleTestSettings = async () => {
+    setTestingSettings(true);
+    setSettingsStatus('');
+    try {
+      const result = await testSettings({
+        llm_api_key: settingsForm.llm_api_key.trim() || null,
+        llm_base_url: settingsForm.llm_base_url.trim() || null,
+        llm_model: settingsForm.llm_model.trim() || null,
+      });
+      setSettingsStatus(result.ok ? `连接正常：${result.message}` : `连接失败：${result.message}`);
+    } catch (err) {
+      setSettingsStatus(err.message);
+    } finally {
+      setTestingSettings(false);
+    }
+  };
+
+  const handleShutdown = async () => {
+    if (!confirm('确定要退出 Bloom 吗？')) return;
+    try {
+      await shutdownBloom();
+      setExited(true);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (exited) {
+    return (
+      <div className="min-h-[100dvh] bg-stone-50 flex items-center justify-center px-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold text-stone-900 mb-2">Bloom 已退出</h1>
+          <p className="text-sm text-stone-400">可以关闭这个浏览器页面了。</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -58,6 +143,20 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-base font-semibold text-white tracking-tight">Bloom</h1>
             <span className="text-stone-600 text-xs font-mono">2-Sigma Learning</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openSettings}
+              className="text-stone-400 hover:text-white text-sm transition-colors px-2 py-1"
+            >
+              设置
+            </button>
+            <button
+              onClick={handleShutdown}
+              className="text-stone-500 hover:text-rose-300 text-sm transition-colors px-2 py-1"
+            >
+              退出
+            </button>
           </div>
         </div>
       </header>
@@ -231,6 +330,85 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {showSettings && (
+        <div className="fixed inset-0 bg-stone-950/30 modal-backdrop flex items-center justify-center z-50 p-6">
+          <form onSubmit={handleSaveSettings} className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-[0_20px_40px_-15px_rgba(0,0,0,0.16)] border border-stone-200/60">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 className="font-semibold text-stone-900">AI 设置</h3>
+                <p className="text-xs text-stone-400 mt-1">保存后立即生效，不需要重启 Bloom。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSettings(false)}
+                className="text-stone-300 hover:text-stone-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1.5">API Key</label>
+                <input
+                  type="password"
+                  value={settingsForm.llm_api_key}
+                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, llm_api_key: e.target.value }))}
+                  placeholder={settings?.has_api_key ? `已配置：${settings.api_key_masked}，留空则不修改` : '请输入 API Key'}
+                  className="w-full px-3.5 py-2.5 bg-white border border-stone-200 rounded-lg text-sm transition-colors hover:border-stone-300 focus:border-emerald-600 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1.5">Base URL</label>
+                <input
+                  type="text"
+                  value={settingsForm.llm_base_url}
+                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, llm_base_url: e.target.value }))}
+                  placeholder="https://api.moleapi.com/v1"
+                  className="w-full px-3.5 py-2.5 bg-white border border-stone-200 rounded-lg text-sm transition-colors hover:border-stone-300 focus:border-emerald-600 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1.5">Model</label>
+                <input
+                  type="text"
+                  value={settingsForm.llm_model}
+                  onChange={(e) => setSettingsForm((prev) => ({ ...prev, llm_model: e.target.value }))}
+                  placeholder="gpt-5.4-mini"
+                  className="w-full px-3.5 py-2.5 bg-white border border-stone-200 rounded-lg text-sm transition-colors hover:border-stone-300 focus:border-emerald-600 outline-none"
+                />
+              </div>
+            </div>
+
+            {settingsStatus && (
+              <div className="mt-4 text-sm text-stone-600 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2 break-words">
+                {settingsStatus}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={handleTestSettings}
+                disabled={testingSettings || savingSettings}
+                className="px-4 py-2 text-sm bg-stone-100 text-stone-600 rounded-lg hover:bg-stone-200 disabled:opacity-50 transition-all cursor-pointer"
+              >
+                {testingSettings ? '测试中...' : '测试连接'}
+              </button>
+              <button
+                type="submit"
+                disabled={savingSettings || testingSettings}
+                className="px-5 py-2 text-sm bg-stone-900 text-white rounded-lg hover:bg-stone-800 disabled:opacity-50 transition-all cursor-pointer"
+              >
+                {savingSettings ? '保存中...' : '保存设置'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

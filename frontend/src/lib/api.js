@@ -166,3 +166,27 @@ export async function getCourseStats(courseId) {
 export async function getSummary(courseId) {
   return apiRequest(`/courses/${courseId}/summary`);
 }
+
+// --- Settings ---
+
+export async function getSettings() {
+  return apiRequest('/settings');
+}
+
+export async function updateSettings(data) {
+  return apiRequest('/settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function testSettings(data) {
+  return apiRequest('/settings/test', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function shutdownBloom() {
+  return apiRequest('/shutdown', { method: 'POST' });
+}

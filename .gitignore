@@ -13,6 +13,9 @@ htmlcov/
 *.egg-info/
 build/
 *.log
+.runtime*/
+Bloom.port
+Bloom.lock
 .gstack/
 .tech-lead/
 docs/CHANGELOG.md
